@@ -32,14 +32,14 @@ Requirements:
 - A printer, paper, or print-standard CMYK ICC profile supplied by your printer or another authorized source.
 
 ```console
-python -m pip install print-color-preflight
+python -m pip install "print-color-preflight @ https://github.com/loganpendragonmultiverse/print-color-preflight/releases/download/v1.0.0/print_color_preflight-1.0.0-py3-none-any.whl"
 print-color-preflight inspect artwork.pdf --html preflight.html
 print-color-preflight plan artwork.pdf --profile printer.icc --intent perceptual
 print-color-preflight convert artwork.pdf artwork-cmyk.pdf --profile printer.icc --json conversion.json
 print-color-preflight ink artwork-cmyk.pdf --limit 300 --json ink.json
 ```
 
-When running from a repository checkout, use `python -m pip install .` instead. Set `PRINT_COLOR_GHOSTSCRIPT` when Ghostscript is not on `PATH`.
+The project is not currently published on PyPI; the command above installs the verified GitHub release wheel. When running from a repository checkout, use `python -m pip install .` instead. Set `PRINT_COLOR_GHOSTSCRIPT` when Ghostscript is not on `PATH`.
 
 ## What the output means
 
@@ -52,7 +52,7 @@ Exit code `0` means the requested operation completed. Operational or validation
 
 ## Supported platforms
 
-The Python package is platform-independent. Conversion depends on a compatible Ghostscript command (`gs`, `gswin64c.exe`, or `gswin32c.exe`). Tests cover Python 3.10 through 3.14 and exercise real Ghostscript conversion on Ubuntu in CI.
+The Python package is platform-independent. Conversion depends on a compatible Ghostscript command (`gs`, `gswin64c.exe`, or `gswin32c.exe`). CI tests Python 3.10 and 3.14 on Windows, macOS, and Linux and exercises real Ghostscript conversion on Ubuntu.
 
 ## Privacy and security
 
@@ -83,4 +83,3 @@ The project is maintained as a focused PDF color utility. Bug reports and narrow
 ## License
 
 Print Color Preflight is released under the MIT License. Ghostscript, printer profiles, and other external tools or data retain their own licenses and are not bundled with this project.
-
