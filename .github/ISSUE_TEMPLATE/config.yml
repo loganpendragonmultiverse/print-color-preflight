@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Workflow questions
+    url: https://github.com/loganpendragonmultiverse/print-color-preflight/discussions
+    about: Ask usage and print-workflow questions in Discussions.
+

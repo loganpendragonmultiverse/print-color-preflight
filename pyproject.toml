@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=78", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "print-color-preflight"
+version = "1.0.0"
+description = "Profile-aware PDF color preflight and RGB-to-CMYK conversion planning."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Logan Pendragon Multiverse" }]
+keywords = ["pdf", "cmyk", "rgb", "icc", "preflight", "printing", "ghostscript"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Printing",
+]
+dependencies = [
+  "pikepdf>=9.5,<11",
+  "Pillow>=11,<13",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "mypy>=1.15,<2",
+  "pip-audit>=2.9,<3",
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.11,<1",
+]
+
+[project.scripts]
+print-color-preflight = "print_color_preflight.cli:main"
+pcp = "print_color_preflight.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/loganpendragonmultiverse/print-color-preflight"
+Issues = "https://github.com/loganpendragonmultiverse/print-color-preflight/issues"
+Changelog = "https://github.com/loganpendragonmultiverse/print-color-preflight/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+ignore = ["S603"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S106"]
+"examples/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["print_color_preflight"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = ["integration: requires a working Ghostscript executable"]
+
+[tool.coverage.run]
+branch = true
+source = ["print_color_preflight"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true

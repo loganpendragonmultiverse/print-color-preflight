@@ -1,0 +1,15 @@
+/.venv/
+/.env
+/.env.*
+!/.env.example
+/build/
+/dist/
+/.coverage
+/.mypy_cache/
+/.pytest_cache/
+/.ruff_cache/
+__pycache__/
+*.egg-info/
+*.py[cod]
+*.tif
+*.tiff
