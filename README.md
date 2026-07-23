@@ -83,3 +83,7 @@ The project is maintained as a focused PDF color utility. Bug reports and narrow
 ## License
 
 Print Color Preflight is released under the MIT License. Ghostscript, printer profiles, and other external tools or data retain their own licenses and are not bundled with this project.
+
+## More open-source projects
+
+This project is part of the [Logan Pendragon Forge open-source collection](https://www.loganpendragonforge.com/open-source/). Browse the catalog for other released tools, source repositories, live demos, and downloads.
