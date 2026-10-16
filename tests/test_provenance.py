@@ -146,3 +146,78 @@ def test_distinct_resource_font_entries_keep_their_counts(tmp_path: Path) -> Non
     inventory = inspect_pdf(path)
     assert inventory.font_count == 4
     assert len(refs(inventory, "unembedded-fonts")) == 4
+
+
+def test_direct_resources_self_referencing_form_terminates(tmp_path: Path) -> None:
+    path = tmp_path / "direct-cycle.pdf"
+    pdf = pikepdf.Pdf.new()
+    page = pdf.add_blank_page()
+    form = pdf.make_stream(b"1 0 0 rg /Self Do")
+    form["/Subtype"] = pikepdf.Name.Form
+    form["/BBox"] = pikepdf.Array([0, 0, 10, 10])
+    form["/Resources"] = pikepdf.Dictionary(XObject=pikepdf.Dictionary(Self=form))
+    page.obj["/Resources"] = pikepdf.Dictionary(XObject=pikepdf.Dictionary(Fm=form))
+    pdf.save(path)
+    with pikepdf.Pdf.open(path) as reopened:
+        assert reopened.pages[0].Resources.XObject.Fm.Resources.objgen == (0, 0)
+    inventory = inspect_pdf(path)
+    rgb = refs(inventory, "untagged-rgb")
+    assert len(rgb) == 1
+    assert rgb[0]["resource"] == "Resources/XObject/Fm/Contents"
+
+
+def test_resource_less_form_uses_direct_parent_resources_without_rescanning(tmp_path: Path) -> None:
+    path = tmp_path / "resource-less.pdf"
+    pdf = pikepdf.Pdf.new()
+    pages = [pdf.add_blank_page() for _ in range(2)]
+    form = pdf.make_stream(b"/RGB cs 1 0 0 scn")
+    form["/Subtype"] = pikepdf.Name.Form
+    form["/BBox"] = pikepdf.Array([0, 0, 10, 10])
+    for page in pages:
+        page.obj["/Resources"] = pikepdf.Dictionary(
+            ColorSpace=pikepdf.Dictionary(RGB=pikepdf.Name.DeviceRGB),
+            XObject=pikepdf.Dictionary(Fm=form, Alias=form),
+        )
+        page.obj["/Contents"] = pdf.make_stream(b"/Fm Do /Fm Do /Alias Do")
+    pdf.save(path)
+    with pikepdf.Pdf.open(path) as reopened:
+        assert reopened.pages[0].Resources.objgen == (0, 0)
+        assert "/Resources" not in reopened.pages[0].Resources.XObject.Fm
+    inventory = inspect_pdf(path)
+    rows = refs(inventory, "untagged-rgb")
+    assert len(rows) == 6
+    for page_number in (1, 2):
+        assert {row["resource"] for row in rows if row["page"] == page_number} == {
+            "Resources/ColorSpace/RGB",
+            "Resources/XObject/Fm/Contents",
+            "Resources/XObject/Alias/Contents",
+        }
+    assert inventory.to_dict() == inspect_pdf(path).to_dict()
+
+
+def test_mutually_recursive_forms_keep_independent_shared_paths(tmp_path: Path) -> None:
+    path = tmp_path / "mutual.pdf"
+    pdf = pikepdf.Pdf.new()
+    pages = [pdf.add_blank_page() for _ in range(2)]
+    first = pdf.make_stream(b"1 0 0 rg /Other Do")
+    second = pdf.make_stream(b"0 1 0 rg /Other Do")
+    for form in (first, second):
+        form["/Subtype"] = pikepdf.Name.Form
+        form["/BBox"] = pikepdf.Array([0, 0, 10, 10])
+    first["/Resources"] = pikepdf.Dictionary(XObject=pikepdf.Dictionary(Other=second))
+    second["/Resources"] = pikepdf.Dictionary(XObject=pikepdf.Dictionary(Other=first))
+    for page in pages:
+        page.obj["/Resources"] = pikepdf.Dictionary(
+            XObject=pikepdf.Dictionary(Fm=first, Alias=first)
+        )
+    pdf.save(path)
+    inventory = inspect_pdf(path)
+    rows = refs(inventory, "untagged-rgb")
+    assert len(rows) == 8
+    for page_number in (1, 2):
+        assert {row["resource"] for row in rows if row["page"] == page_number} == {
+            "Resources/XObject/Fm/Contents",
+            "Resources/XObject/Fm/Resources/XObject/Other/Contents",
+            "Resources/XObject/Alias/Contents",
+            "Resources/XObject/Alias/Resources/XObject/Other/Contents",
+        }

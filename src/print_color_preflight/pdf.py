@@ -129,6 +129,7 @@ def _inspect_resources(
     active: set[tuple[int, int]],
     seen_fonts: set[str],
     path: str = "Resources",
+    active_forms: frozenset[tuple[int, int]] = frozenset(),
 ) -> None:
     if not isinstance(resources, pikepdf.Dictionary):
         return
@@ -200,17 +201,31 @@ def _inspect_resources(
             if group is not None and _name(group.get("/S", "")) == "Transparency":
                 inventory.has_transparency = True
                 _evidence(inventory, "transparency", reference)
-            child_resources = xobject.get("/Resources", resources)
-            _inspect_resources(
-                child_resources,
+            # Streams have stable indirect identities even when their resource
+            # dictionaries are direct. Keep this guard local to the current path
+            # so independent aliases and pages still receive their own evidence.
+            form_id = xobject.objgen
+            if form_id in active_forms:
+                continue
+            child_resources = xobject.get("/Resources")
+            if child_resources is not None:
+                _inspect_resources(
+                    child_resources,
+                    inventory,
+                    page_number,
+                    active,
+                    seen_fonts,
+                    f"{child_path}/Resources",
+                    active_forms | {form_id},
+                )
+            # Resource-less Forms use the caller's definitions for content
+            # operators; those definitions have already been inventoried.
+            _inspect_content(
+                xobject,
                 inventory,
                 page_number,
-                active,
-                seen_fonts,
-                f"{child_path}/Resources",
-            )
-            _inspect_content(
-                xobject, inventory, page_number, f"{child_path}/Contents", child_resources
+                f"{child_path}/Contents",
+                child_resources if child_resources is not None else resources,
             )
 
 

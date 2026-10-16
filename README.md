@@ -101,8 +101,10 @@ Shared and inherited resources are attributed to every associated page.
 Repeated resource aliases retain distinct paths, while repeated use of the same
 XObject name does not duplicate a resource reference. Resource presence is not
 proof that an object is painted: this is a static inventory, not a rendering
-trace. Recursive resource graphs terminate at a resource already on the current
-traversal path. The HTML report includes these references in its complete
+trace. Recursive resource graphs terminate at an indirect resource or Form XObject
+already on the current traversal path, including Forms with direct resources.
+Forms without their own resources use the caller definitions for color operators
+without recursively inventorying that dictionary again. The HTML report includes these references in its complete
 machine-readable record.
 
 The references help locate findings for review. They do not certify PDF/X

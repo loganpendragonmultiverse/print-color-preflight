@@ -12,7 +12,8 @@ python -m pip_audit
 ```
 
 Synthetic PDFs cover inherited/shared resources, recursive Form resources,
-repeated XObjects, RGB and spot colors, unembedded fonts, transparency,
+repeated XObjects, direct resource dictionaries, resource-less Forms, self/mutual
+Form cycles, RGB and spot colors, unembedded fonts, transparency,
 malformed inputs, encryption and deterministic file-local references.
 Source PDFs remain unchanged by inspection.
 

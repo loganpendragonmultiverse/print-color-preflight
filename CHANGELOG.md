@@ -6,6 +6,7 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 - Attach deterministic page, PDF object and resource-path references to existing RGB, spot-color, font, transparency and overprint findings.
 - Inspect inherited and shared resources on every associated page, terminate recursive resource graphs, and inspect color operators in Form XObjects.
+- Terminate Form cycles with direct resources and avoid rescanning inherited dictionaries for resource-less Forms.
 - Retain document-level findings and the existing Ghostscript conversion and proofing boundaries.
 
 ## [1.0.0] - 2026-07-21
