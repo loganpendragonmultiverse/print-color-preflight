@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "print-color-preflight"
-version = "1.0.0"
+version = "1.1.0"
 description = "Profile-aware PDF color preflight and RGB-to-CMYK conversion planning."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -76,3 +76,8 @@ omit = ["*/__main__.py"]
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
+
+[tool.setuptools.data-files]
+"share/doc/print-color-preflight" = ["README.md", "CHANGELOG.md", "DEVELOPMENT.md", "TESTING.md"]
+"share/doc/print-color-preflight/docs" = ["docs/ARCHITECTURE.md", "docs/CLI.md", "docs/COLOR-WORKFLOW.md"]
+"share/doc/print-color-preflight/examples" = ["examples/make_sample_pdf.py"]

@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 class Severity(str, Enum):
@@ -59,6 +59,7 @@ class PdfInventory:
     has_transparency: bool = False
     has_overprint: bool = False
     findings: list[Finding] = field(default_factory=list)
+    evidence: dict[str, list[dict[str, Any]]] = field(default_factory=dict, repr=False)
 
     @property
     def highest_severity(self) -> Severity:

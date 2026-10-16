@@ -2,6 +2,12 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [1.1.0] - 2026-10-16
+
+- Attach deterministic page, PDF object and resource-path references to existing RGB, spot-color, font, transparency and overprint findings.
+- Inspect inherited and shared resources on every associated page, terminate recursive resource graphs, and inspect color operators in Form XObjects.
+- Retain document-level findings and the existing Ghostscript conversion and proofing boundaries.
+
 ## [1.0.0] - 2026-07-21
 
 ### Added
@@ -17,3 +23,5 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 [1.0.0]: https://github.com/loganpendragonmultiverse/print-color-preflight/releases/tag/v1.0.0
 
+
+[1.1.0]: https://github.com/loganpendragonmultiverse/print-color-preflight/releases/tag/v1.1.0
