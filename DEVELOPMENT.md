@@ -49,8 +49,16 @@ The integration test runs when both Ghostscript and `PRINT_COLOR_TEST_CMYK_PROFI
 
 ## Release record
 
-- Current version: **1.0.0**.
+- Current version: **1.1.0**.
 - Maintainer: Logan Pendragon Multiverse.
 - Repository: `https://github.com/loganpendragonmultiverse/print-color-preflight`.
 - License: MIT for this project. External executables and profiles retain their own licenses.
 
+
+## Finding provenance
+
+Keep aggregate finding codes and severity compatible. Attach stable page,
+object and resource-path evidence; traverse shared resources per page using
+path-local cycle guards. Object references are file-local, not persistent IDs.
+Static resource association must not be presented as proof of rendered use.
+No PDF/X or physical-color certification is introduced.

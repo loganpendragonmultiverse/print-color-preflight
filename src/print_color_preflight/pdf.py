@@ -32,15 +32,27 @@ def inspect_pdf(path: Path, password: str | None = None) -> PdfInventory:
             encrypted=pdf.is_encrypted,
         )
         _read_output_intents(pdf, inventory)
-        seen_resources: set[tuple[int, int]] = set()
+        seen_fonts: set[str] = set()
         for page_number, page in enumerate(pdf.pages, start=1):
             if "/TrimBox" not in page.obj:
                 inventory.pages_without_trimbox.append(page_number)
-            resources = page.obj.get("/Resources")
+            resources = _page_resources(page.obj)
             if resources is not None:
-                _inspect_resources(resources, inventory, page_number, seen_resources)
-            _inspect_content(page, inventory, page_number)
+                _inspect_resources(resources, inventory, page_number, set(), seen_fonts)
+            _inspect_content(page, inventory, page_number, resources=resources)
         _build_findings(inventory)
+        for finding in inventory.findings:
+            references = inventory.evidence.get(finding.code)
+            if references:
+                finding.details["references"] = sorted(
+                    references,
+                    key=lambda ref: (
+                        ref["page"],
+                        ref["resource"],
+                        ref.get("instruction", 0),
+                        ref.get("object") or "",
+                    ),
+                )
         return inventory
 
 
@@ -74,104 +86,200 @@ def _read_output_intents(pdf: Pdf, inventory: PdfInventory) -> None:
         inventory.output_intents.append(identifier or info or "Unlabeled output intent")
 
 
+def _reference(obj: Any, page: int, resource: str, **extra: Any) -> dict[str, Any]:
+    objgen = getattr(obj, "objgen", (0, 0))
+    return {
+        "page": page,
+        "object": f"{objgen[0]} {objgen[1]} R" if objgen != (0, 0) else None,
+        "resource": resource,
+        **extra,
+    }
+
+
+def _evidence(inventory: PdfInventory, code: str, reference: dict[str, Any]) -> None:
+    rows = inventory.evidence.setdefault(code, [])
+    if reference not in rows:
+        rows.append(reference)
+
+
+def _entries(value: Any) -> list[tuple[str, Any]]:
+    if not isinstance(value, pikepdf.Dictionary):
+        return []
+    return sorted(value.items(), key=lambda item: item[0])
+
+
+def _page_resources(obj: Any) -> Any:
+    seen: set[tuple[int, int]] = set()
+    while obj is not None:
+        if "/Resources" in obj:
+            return obj["/Resources"]
+        objgen = getattr(obj, "objgen", (0, 0))
+        if objgen != (0, 0):
+            if objgen in seen:
+                break
+            seen.add(objgen)
+        obj = obj.get("/Parent")
+    return pikepdf.Dictionary()
+
+
 def _inspect_resources(
     resources: Any,
     inventory: PdfInventory,
     page_number: int,
-    seen_resources: set[tuple[int, int]],
+    active: set[tuple[int, int]],
+    seen_fonts: set[str],
+    path: str = "Resources",
+    active_forms: frozenset[tuple[int, int]] = frozenset(),
 ) -> None:
-    object_id = getattr(resources, "objgen", (0, 0))
-    if object_id != (0, 0) and object_id in seen_resources:
+    if not isinstance(resources, pikepdf.Dictionary):
         return
-    if object_id != (0, 0):
-        seen_resources.add(object_id)
+    object_id = getattr(resources, "objgen", (0, 0))
+    if object_id != (0, 0) and object_id in active:
+        return
+    active = active | {object_id} if object_id != (0, 0) else active
 
-    color_spaces = resources.get("/ColorSpace", {})
-    for _, definition in color_spaces.items():
-        _record_color_space(definition, inventory)
+    for key, definition in _entries(resources.get("/ColorSpace")):
+        _record_color_space(
+            definition, inventory, _reference(definition, page_number, f"{path}/ColorSpace{key}")
+        )
 
-    fonts = resources.get("/Font", {})
-    for _, font in fonts.items():
-        inventory.font_count += 1
+    for key, font in _entries(resources.get("/Font")):
+        if not isinstance(font, pikepdf.Dictionary):
+            continue
+        reference = _reference(font, page_number, f"{path}/Font{key}")
+        # Preserve resource-entry counts while collecting evidence on every page.
+        resource_id = getattr(resources, "objgen", (0, 0))
+        identity = (
+            f"{resource_id}:{key}" if resource_id != (0, 0) else f"{page_number}:{path}:{key}"
+        )
+        if identity not in seen_fonts:
+            inventory.font_count += 1
+            seen_fonts.add(identity)
         base_name = _name(font.get("/BaseFont", "/Unknown"))
         descriptor = font.get("/FontDescriptor")
-        descendants = font.get("/DescendantFonts", [])
+        descendants: Any = font.get("/DescendantFonts", [])
         if descriptor is None and descendants:
             descriptor = descendants[0].get("/FontDescriptor")
         if descriptor is None or not any(
             key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3")
         ):
             inventory.unembedded_fonts.add(base_name)
+            _evidence(inventory, "unembedded-fonts", {**reference, "font": base_name})
 
-    ext_states = resources.get("/ExtGState", {})
-    for _, state in ext_states.items():
-        if _number(state.get("/ca", 1)) < 1 or _number(state.get("/CA", 1)) < 1:
+    for key, state in _entries(resources.get("/ExtGState")):
+        if not isinstance(state, pikepdf.Dictionary):
+            continue
+        reference = _reference(state, page_number, f"{path}/ExtGState{key}")
+        transparent = (
+            _number(state.get("/ca", 1)) < 1
+            or _number(state.get("/CA", 1)) < 1
+            or _name(state.get("/BM", "/Normal")) not in {"Normal", "Compatible"}
+        )
+        if transparent:
             inventory.has_transparency = True
-        blend_mode = _name(state.get("/BM", "/Normal"))
-        if blend_mode not in {"Normal", "Compatible"}:
-            inventory.has_transparency = True
+            _evidence(inventory, "transparency", reference)
         if bool(state.get("/OP", False)) or bool(state.get("/op", False)):
             inventory.has_overprint = True
+            _evidence(inventory, "overprint", reference)
 
-    xobjects = resources.get("/XObject", {})
-    for _, xobject in xobjects.items():
+    for key, xobject in _entries(resources.get("/XObject")):
+        if not isinstance(xobject, pikepdf.Stream):
+            continue
+        child_path = f"{path}/XObject{key}"
+        reference = _reference(xobject, page_number, child_path)
         subtype = _name(xobject.get("/Subtype", ""))
         if subtype == "Image":
             color_space = xobject.get("/ColorSpace")
             if color_space is not None:
-                _record_color_space(color_space, inventory)
+                _record_color_space(color_space, inventory, reference)
             soft_mask = xobject.get("/SMask")
             if soft_mask is not None and _name(soft_mask) != "None":
                 inventory.has_transparency = True
+                _evidence(inventory, "transparency", reference)
         elif subtype == "Form":
             group = xobject.get("/Group")
             if group is not None and _name(group.get("/S", "")) == "Transparency":
                 inventory.has_transparency = True
+                _evidence(inventory, "transparency", reference)
+            # Streams have stable indirect identities even when their resource
+            # dictionaries are direct. Keep this guard local to the current path
+            # so independent aliases and pages still receive their own evidence.
+            form_id = xobject.objgen
+            if form_id in active_forms:
+                continue
             child_resources = xobject.get("/Resources")
             if child_resources is not None:
-                _inspect_resources(child_resources, inventory, page_number, seen_resources)
+                _inspect_resources(
+                    child_resources,
+                    inventory,
+                    page_number,
+                    active,
+                    seen_fonts,
+                    f"{child_path}/Resources",
+                    active_forms | {form_id},
+                )
+            # Resource-less Forms use the caller's definitions for content
+            # operators; those definitions have already been inventoried.
+            _inspect_content(
+                xobject,
+                inventory,
+                page_number,
+                f"{child_path}/Contents",
+                child_resources if child_resources is not None else resources,
+            )
 
 
-def _inspect_content(page: Any, inventory: PdfInventory, page_number: int) -> None:
+def _inspect_content(
+    page: Any,
+    inventory: PdfInventory,
+    page_number: int,
+    path: str = "Contents",
+    resources: Any = None,
+) -> None:
+    obj = page.obj.get("/Contents") if isinstance(page, pikepdf.Page) else page
     try:
         instructions: Any = pikepdf.parse_content_stream(page)
-        for operands, operator in instructions:
+        for index, (operands, operator) in enumerate(instructions, 1):
             operation = str(operator)
-            if operation in {"rg", "RG"}:
-                inventory.color_spaces.add("DeviceRGB")
-            elif operation in {"k", "K"}:
-                inventory.color_spaces.add("DeviceCMYK")
-            elif operation in {"g", "G"}:
-                inventory.color_spaces.add("DeviceGray")
+            reference = _reference(obj, page_number, path, instruction=index, operator=operation)
+            if operation in {"rg", "RG", "k", "K", "g", "G"}:
+                name = {"rg": "DeviceRGB", "k": "DeviceCMYK", "g": "DeviceGray"}[operation.lower()]
+                _record_color_space(pikepdf.Name("/" + name), inventory, reference)
             elif operation in {"cs", "CS"} and operands:
-                _record_named_color_space(page, operands[0], inventory)
+                _record_named_color_space(resources, operands[0], inventory, reference)
     except (pikepdf.PdfError, TypeError, ValueError) as exc:
         inventory.findings.append(
             Finding(
                 code="content-stream-unparsed",
                 severity=Severity.WARNING,
                 page=page_number,
-                message="A page content stream could not be fully inspected.",
-                details={"reason": str(exc)},
+                message="A content stream could not be fully inspected.",
+                details={"reason": str(exc), "references": [_reference(obj, page_number, path)]},
             )
         )
 
 
-def _record_named_color_space(page: Any, operand: Any, inventory: PdfInventory) -> None:
+def _record_named_color_space(
+    resources: Any, operand: Any, inventory: PdfInventory, reference: dict[str, Any]
+) -> None:
     name = _name(operand)
     if name in {"DeviceRGB", "DeviceCMYK", "DeviceGray", "Pattern"}:
-        inventory.color_spaces.add(name)
+        _record_color_space(operand, inventory, reference)
         return
-    resources = page.obj.get("/Resources", {})
-    definitions = resources.get("/ColorSpace", {})
-    definition = definitions.get(f"/{name}")
-    if definition is not None:
-        _record_color_space(definition, inventory)
+    if isinstance(resources, pikepdf.Dictionary):
+        definitions: Any = resources.get("/ColorSpace", {})
+        definition = definitions.get(f"/{name}")
+        if definition is not None:
+            _record_color_space(definition, inventory, reference)
 
 
-def _record_color_space(definition: Any, inventory: PdfInventory) -> None:
+def _record_color_space(
+    definition: Any, inventory: PdfInventory, reference: dict[str, Any] | None = None
+) -> None:
     if isinstance(definition, pikepdf.Name):
         inventory.color_spaces.add(_name(definition))
+        if _name(definition) == "DeviceRGB" and reference is not None:
+            _evidence(inventory, "untagged-rgb", reference)
         return
     try:
         values = list(definition)
@@ -187,6 +295,8 @@ def _record_color_space(definition: Any, inventory: PdfInventory) -> None:
         )
     elif family in {"Separation", "DeviceN"}:
         inventory.color_spaces.add(family)
+        if reference is not None:
+            _evidence(inventory, "spot-colors", reference)
         if len(values) > 1:
             names = values[1] if family == "DeviceN" else [values[1]]
             for name in names:
