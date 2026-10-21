@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0 — 2026-10-21
+
+- Reject malformed PDF metadata with actionable errors before pikepdf page repair; retain input bytes and refuse reports on inspection failure.
+- Reconcile current installation/support instructions and document separately licensed upstream Ghostscript 10.08.0 Linux qualification.
+
+- Require Python 3.11+, Pillow 13 and current pikepdf, retaining six native combinations.
+- Refuse report/input/profile aliases and existing or dangling report destinations.
+- Publish validated conversion output exclusively and preserve observed concurrent changes.
+- Fingerprint source/profile stability and strengthen ICC tag-table bounds.
+- Bound TAC raster geometry and traverse pixels without full pixel lists.
+- Retain all native integration assertions using isolated installed targets on noexec-safe interpreters.
+
+
 All notable changes are documented here. This project follows Semantic Versioning.
 
 ## [1.1.0] - 2026-10-16

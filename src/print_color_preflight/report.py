@@ -5,13 +5,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .file_safety import new_destination
+
 
 def write_json_report(data: dict[str, Any], destination: Path) -> None:
+    new_destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    with destination.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def write_html_report(data: dict[str, Any], destination: Path, title: str) -> None:
+    new_destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     findings = data.get("findings") or data.get("postflight", {}).get("findings", [])
     rows = "".join(
@@ -32,9 +37,10 @@ def write_html_report(data: dict[str, Any], destination: Path, title: str) -> No
 <title>{html.escape(title)}</title>
 <style>
 :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
-body {{ max-width: 1100px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
+body {{ overflow-wrap: anywhere; max-width: 1100px; margin: 2rem auto;
+        padding: 0 1rem; line-height: 1.5; }}
 header {{ border-bottom: 4px solid #1f6f78; margin-bottom: 2rem; }}
-table {{ border-collapse: collapse; width: 100%; }}
+table {{ table-layout: fixed; border-collapse: collapse; width: 100%; }}
 th, td {{ border-bottom: 1px solid #8886; padding: .7rem; text-align: left; vertical-align: top; }}
 .severity {{ border-radius: 999px; padding: .2rem .55rem; font-weight: 700; }}
 .error {{ background: #8b1e1e; color: white; }}
@@ -53,4 +59,5 @@ pre {{ overflow: auto; background: #7772; padding: 1rem; border-radius: .5rem; }
 </body>
 </html>
 """
-    destination.write_text(body, encoding="utf-8")
+    with destination.open("x", encoding="utf-8") as handle:
+        handle.write(body)

@@ -4,7 +4,7 @@ Print Color Preflight is a local, profile-aware PDF inspection and RGB-to-CMYK c
 
 The project is designed for designers, small publishers, print shops, and developers who need a repeatable conversion record instead of a profile-free RGB-to-CMYK formula.
 
-> **Release status:** 1.1.0. PDF-first command-line release for Windows, macOS, and Linux.
+> **Release status:** 2.0.0. PDF-first command-line release for Windows, macOS, and Linux.
 
 ## Why profiles are mandatory
 
@@ -27,12 +27,12 @@ It does not promise that an out-of-gamut screen color can be reproduced on paper
 
 Requirements:
 
-- Python 3.10 or newer.
+- Python 3.11 or newer.
 - Ghostscript for conversion and ink analysis. Inspection and planning do not require Ghostscript.
 - A printer, paper, or print-standard CMYK ICC profile supplied by your printer or another authorized source.
 
 ```console
-python -m pip install "print-color-preflight @ https://github.com/loganpendragonmultiverse/print-color-preflight/releases/download/v1.1.0/print_color_preflight-1.1.0-py3-none-any.whl"
+python -m pip install "print-color-preflight @ https://github.com/loganpendragonmultiverse/print-color-preflight/releases/download/v2.0.0/print_color_preflight-2.0.0-py3-none-any.whl"
 print-color-preflight inspect artwork.pdf --html preflight.html
 print-color-preflight plan artwork.pdf --profile printer.icc --intent perceptual
 print-color-preflight convert artwork.pdf artwork-cmyk.pdf --profile printer.icc --json conversion.json
@@ -52,7 +52,7 @@ Exit code `0` means the requested operation completed. Operational or validation
 
 ## Supported platforms
 
-The Python package is platform-independent. Conversion depends on a compatible Ghostscript command (`gs`, `gswin64c.exe`, or `gswin32c.exe`). CI tests Python 3.10 and 3.14 on Windows, macOS, and Linux and exercises real Ghostscript conversion on Ubuntu.
+The Python package is platform-independent. Conversion depends on a compatible Ghostscript command (`gs`, `gswin64c.exe`, or `gswin32c.exe`). CI tests Python 3.11 and 3.14 on Windows, macOS, and Linux and exercises real Ghostscript conversion on Ubuntu.
 
 ## Privacy and security
 
@@ -62,10 +62,10 @@ All processing is local. The tool contains no analytics, accounts, network uploa
 
 - The tool does not choose a printer or paper profile for you.
 - Untagged `DeviceRGB` can be detected but its intended source space cannot be recovered with certainty.
-- Spot-color preservation is reported for manual review; 1.1.0 does not promise a spot-preserving process-color conversion.
+- Spot-color preservation is reported for manual review; This release does not promise a spot-preserving process-color conversion.
 - The embedded output intent documents the selected target. It does not by itself make a file PDF/X compliant. Validate required PDF/X conformance with a dedicated validator.
 - Soft proofing depends on a calibrated display and controlled viewing conditions and is outside this CLI release.
-- SVG and EPS are not accepted directly in 1.1.0. Export them to PDF without flattening important print semantics, then inspect the PDF.
+- SVG and EPS are not accepted directly in this release. Export them to PDF without flattening important print semantics, then inspect the PDF.
 - Physical correctness still requires a printer-approved profile and, for critical work, a contract or press proof.
 
 ## Documentation
@@ -109,3 +109,50 @@ machine-readable record.
 
 The references help locate findings for review. They do not certify PDF/X
 conformance, physical color accuracy, or a complete printer preflight.
+
+
+## Version 2.0 safety and compatibility
+
+Python 3.11+ and Pillow 13 are required; Python 3.10 support is removed. CI keeps
+all six Linux/Windows/macOS combinations, now Python 3.11 and 3.14, the 85% branch
+coverage threshold, dependency audit, CodeQL and real Ghostscript integration.
+Only the three required Python 3.10 test names migrate to Python 3.11; other
+branch protections and application bindings remain unchanged.
+
+Conversion stages on the output filesystem, fingerprints input/profile bytes,
+parses postflight before publication, and publishes new files exclusively.
+`--overwrite` applies only to an existing regular destination that remains
+unchanged during conversion. Links, source/profile aliases and observed raced
+writers are refused. Reports must be new distinct files, including when conversion
+uses `--overwrite`. Ordinary collision protection is not a hostile-filesystem sandbox.
+
+ICC inspection validates the header and tag-table bounds, with a 16 MiB limit.
+A header-only plan does not establish a usable color transform; the actual selected
+profile is exercised by Ghostscript conversion and must still be licensed and
+appropriate for the printer. No ICC profile is bundled. Native acceptance uses
+installed Ghostscript and its separately licensed default CMYK profile, not the
+synthetic header fixtures used by unit tests.
+
+TAC screening rejects invalid/boolean controls and predicts raster pixel budgets
+before invoking Ghostscript. Decoded proof rasters are checked again before color
+conversion. Limits are 40 million pixels per page and 200 million per document;
+lower DPI or split a larger proof. Pixel traversal avoids a document-sized tuple
+or list. TAC remains a sampled screening estimate, not press or PDF/X certification.
+
+Installed-package tests use isolated pip targets and an existing interpreter so
+read-only/noexec temporary filesystems need no executable-policy change. Full
+source assertions, real Ghostscript behavior and installed import provenance remain
+required. Native CI also invokes the generated console entrypoint directly.
+
+Pillow 13 has a conditional upstream Arrow-export advisory with no fixed release
+listed in this assessment. This application does not export Arrow; the final
+source-specific applicability assessment is independently reviewed. A successful
+dependency audit is not a blanket zero-known-vulnerabilities claim.
+
+## Current external runtime qualification
+
+Use a current upstream or vendor-maintained patched Ghostscript build. Version
+2.0.0 Linux qualification exercises upstream 10.08.0 from a verified official
+source build; the historical host 9.54 run establishes functional behavior only.
+The external engine and ICC profiles are not bundled. See [Ghostscript runtime
+qualification](docs/GHOSTSCRIPT.md) for exact scope, provenance and licensing.

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from .file_safety import new_destination
 from .ghostscript import GhostscriptError, convert_pdf, find_ghostscript, ghostscript_version
 from .ink import analyze_ink_coverage
 from .models import ConversionOptions, RenderingIntent, Severity, __version__
@@ -80,6 +82,7 @@ def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_output
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _validate_report_paths(args)
         if args.command == "inspect":
             return _inspect(args)
         if args.command == "profile":
@@ -95,10 +98,38 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Ghostscript: {executable}")
             print(ghostscript_version(executable))
             return 0
-    except (GhostscriptError, PdfInspectionError, ProfileError, ValueError) as exc:
+    except (
+        GhostscriptError,
+        PdfInspectionError,
+        ProfileError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        subprocess.TimeoutExpired,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return 2
+
+
+def _validate_report_paths(args: argparse.Namespace) -> None:
+    reports = [
+        path
+        for name in ("json_path", "html_path")
+        if (path := getattr(args, name, None)) is not None
+    ]
+    protected = [
+        path
+        for name in ("pdf", "profile", "icc_profile", "output")
+        if (path := getattr(args, name, None)) is not None
+    ]
+    resolved_reports = [path.expanduser().resolve() for path in reports]
+    if len(resolved_reports) != len(set(resolved_reports)):
+        raise ValueError("JSON and HTML reports must use different paths")
+    if set(resolved_reports) & {path.expanduser().resolve() for path in protected}:
+        raise ValueError("Reports must differ from input, profile and converted output")
+    for path in reports:
+        new_destination(path)
 
 
 def _inspect(args: argparse.Namespace) -> int:
@@ -145,6 +176,10 @@ def _plan(args: argparse.Namespace) -> int:
     plan: dict[str, Any] = {
         "input": inventory.to_dict(),
         "destination_profile": profile.to_dict(),
+        "profile_validation_scope": (
+            "Header and tag-table bounds; execute conversion "
+            "to test the actual Ghostscript transform"
+        ),
         "rendering_intent": options.intent.value,
         "black_point_compensation": options.black_point_compensation,
         "preserve_black": options.preserve_black,

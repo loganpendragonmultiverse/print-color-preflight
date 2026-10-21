@@ -18,13 +18,14 @@ def inspect_pdf(path: Path, password: str | None = None) -> PdfInventory:
     if not pdf_path.is_file():
         raise PdfInspectionError(f"PDF does not exist: {pdf_path}")
     try:
-        pdf = Pdf.open(pdf_path, password=password or "")
+        pdf = Pdf.open(pdf_path, password=password or "", inherit_page_attributes=False)
     except pikepdf.PasswordError as exc:
         raise PdfInspectionError("PDF is encrypted and requires the correct password") from exc
     except pikepdf.PdfError as exc:
         raise PdfInspectionError(f"PDF could not be parsed: {exc}") from exc
 
     with pdf:
+        _validate_page_tree_resources(pdf)
         inventory = PdfInventory(
             path=pdf_path,
             page_count=len(pdf.pages),
@@ -56,6 +57,30 @@ def inspect_pdf(path: Path, password: str | None = None) -> PdfInventory:
         return inventory
 
 
+def _validate_page_tree_resources(pdf: Pdf) -> None:
+    """Inspect raw page nodes before pikepdf Page wrappers repair Resources."""
+    pending = [pdf.Root.get("/Pages")]
+    seen: set[tuple[int, int]] = set()
+    while pending:
+        node = pending.pop()
+        if not isinstance(node, pikepdf.Dictionary):
+            raise PdfInspectionError("PDF page tree entries must be dictionaries")
+        identity = node.objgen
+        if identity != (0, 0):
+            if identity in seen:
+                raise PdfInspectionError("PDF page tree contains a repeated node")
+            seen.add(identity)
+        resources = node.get("/Resources")
+        if resources is not None and not isinstance(resources, pikepdf.Dictionary):
+            raise PdfInspectionError("PDF Resources must be a dictionary")
+        if node.get("/Type") == pikepdf.Name.Page:
+            continue
+        children = node.get("/Kids")
+        if not isinstance(children, pikepdf.Array):
+            raise PdfInspectionError("PDF Pages Kids must be an array")
+        pending.extend(children)
+
+
 def embed_output_intent(
     pdf_path: Path,
     profile_path: Path,
@@ -80,7 +105,11 @@ def embed_output_intent(
 
 def _read_output_intents(pdf: Pdf, inventory: PdfInventory) -> None:
     intents: Any = pdf.Root.get("/OutputIntents", [])
+    if not isinstance(intents, (pikepdf.Array, list)):
+        raise PdfInspectionError("PDF OutputIntents must be an array")
     for item in intents:
+        if not isinstance(item, pikepdf.Dictionary):
+            raise PdfInspectionError("PDF OutputIntents entries must be dictionaries")
         identifier = _text(item.get("/OutputConditionIdentifier"))
         info = _text(item.get("/Info"))
         inventory.output_intents.append(identifier or info or "Unlabeled output intent")
@@ -103,14 +132,18 @@ def _evidence(inventory: PdfInventory, code: str, reference: dict[str, Any]) -> 
 
 
 def _entries(value: Any) -> list[tuple[str, Any]]:
-    if not isinstance(value, pikepdf.Dictionary):
+    if value is None:
         return []
+    if not isinstance(value, pikepdf.Dictionary):
+        raise PdfInspectionError("PDF resource entries must be a dictionary")
     return sorted(value.items(), key=lambda item: item[0])
 
 
 def _page_resources(obj: Any) -> Any:
     seen: set[tuple[int, int]] = set()
     while obj is not None:
+        if not isinstance(obj, pikepdf.Dictionary):
+            raise PdfInspectionError("PDF page/parent must be a dictionary")
         if "/Resources" in obj:
             return obj["/Resources"]
         objgen = getattr(obj, "objgen", (0, 0))
@@ -132,7 +165,7 @@ def _inspect_resources(
     active_forms: frozenset[tuple[int, int]] = frozenset(),
 ) -> None:
     if not isinstance(resources, pikepdf.Dictionary):
-        return
+        raise PdfInspectionError("PDF Resources must be a dictionary")
     object_id = getattr(resources, "objgen", (0, 0))
     if object_id != (0, 0) and object_id in active:
         return
@@ -145,7 +178,7 @@ def _inspect_resources(
 
     for key, font in _entries(resources.get("/Font")):
         if not isinstance(font, pikepdf.Dictionary):
-            continue
+            raise PdfInspectionError("PDF Font entries must be dictionaries")
         reference = _reference(font, page_number, f"{path}/Font{key}")
         # Preserve resource-entry counts while collecting evidence on every page.
         resource_id = getattr(resources, "objgen", (0, 0))
@@ -158,8 +191,14 @@ def _inspect_resources(
         base_name = _name(font.get("/BaseFont", "/Unknown"))
         descriptor = font.get("/FontDescriptor")
         descendants: Any = font.get("/DescendantFonts", [])
+        if not isinstance(descendants, (pikepdf.Array, list)) or any(
+            not isinstance(child, pikepdf.Dictionary) for child in descendants
+        ):
+            raise PdfInspectionError("PDF DescendantFonts must be an array of dictionaries")
         if descriptor is None and descendants:
             descriptor = descendants[0].get("/FontDescriptor")
+        if descriptor is not None and not isinstance(descriptor, pikepdf.Dictionary):
+            raise PdfInspectionError("PDF FontDescriptor must be a dictionary")
         if descriptor is None or not any(
             key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3")
         ):
@@ -168,7 +207,7 @@ def _inspect_resources(
 
     for key, state in _entries(resources.get("/ExtGState")):
         if not isinstance(state, pikepdf.Dictionary):
-            continue
+            raise PdfInspectionError("PDF ExtGState entries must be dictionaries")
         reference = _reference(state, page_number, f"{path}/ExtGState{key}")
         transparent = (
             _number(state.get("/ca", 1)) < 1
@@ -184,7 +223,7 @@ def _inspect_resources(
 
     for key, xobject in _entries(resources.get("/XObject")):
         if not isinstance(xobject, pikepdf.Stream):
-            continue
+            raise PdfInspectionError("PDF XObject entries must be streams")
         child_path = f"{path}/XObject{key}"
         reference = _reference(xobject, page_number, child_path)
         subtype = _name(xobject.get("/Subtype", ""))
@@ -198,6 +237,8 @@ def _inspect_resources(
                 _evidence(inventory, "transparency", reference)
         elif subtype == "Form":
             group = xobject.get("/Group")
+            if group is not None and not isinstance(group, pikepdf.Dictionary):
+                raise PdfInspectionError("PDF Form Group must be a dictionary")
             if group is not None and _name(group.get("/S", "")) == "Transparency":
                 inventory.has_transparency = True
                 _evidence(inventory, "transparency", reference)
@@ -281,15 +322,18 @@ def _record_color_space(
         if _name(definition) == "DeviceRGB" and reference is not None:
             _evidence(inventory, "untagged-rgb", reference)
         return
-    try:
-        values = list(definition)
-    except (TypeError, ValueError):
-        return
-    if not values:
-        return
+    if not isinstance(definition, pikepdf.Array):
+        raise PdfInspectionError("PDF color space must be a name or array")
+    values = list(definition)
+    if not values or not isinstance(values[0], pikepdf.Name):
+        raise PdfInspectionError("PDF color space array must start with a family name")
     family = _name(values[0])
-    if family == "ICCBased" and len(values) > 1:
-        components = int(values[1].get("/N", 0))
+    if family == "ICCBased":
+        if len(values) != 2 or not isinstance(values[1], pikepdf.Stream):
+            raise PdfInspectionError("PDF ICCBased color space requires a profile stream")
+        components: Any = values[1].get("/N")
+        if type(components) is not int or components not in {1, 3, 4}:
+            raise PdfInspectionError("PDF ICCBased profile N must be 1, 3 or 4")
         inventory.color_spaces.add(
             {1: "ICCBased Gray", 3: "ICCBased RGB", 4: "ICCBased CMYK"}.get(components, "ICCBased")
         )
@@ -297,10 +341,18 @@ def _record_color_space(
         inventory.color_spaces.add(family)
         if reference is not None:
             _evidence(inventory, "spot-colors", reference)
-        if len(values) > 1:
-            names = values[1] if family == "DeviceN" else [values[1]]
-            for name in names:
-                inventory.spot_colors.add(_name(name))
+        if len(values) < 2:
+            raise PdfInspectionError("PDF spot color space requires colorant names")
+        if family == "DeviceN":
+            if not isinstance(values[1], pikepdf.Array) or not values[1]:
+                raise PdfInspectionError("PDF DeviceN colorants must be a nonempty name array")
+            names = list(values[1])
+        else:
+            names = [values[1]]
+        if any(not isinstance(name, pikepdf.Name) for name in names):
+            raise PdfInspectionError("PDF spot colorants must be names")
+        for name in names:
+            inventory.spot_colors.add(_name(name))
     elif family:
         inventory.color_spaces.add(family)
 

@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import sys
-import venv
 from pathlib import Path
 
 import pytest
@@ -48,22 +47,45 @@ def test_installed_release_packages_with_licensed_profile(
         pytest.skip("PRINT_COLOR_TEST_CMYK_PROFILE is not configured")
     find_ghostscript()
     root = Path(__file__).resolve().parents[1]
-    artifacts = tmp_path / "artifacts"
-    subprocess.run(
-        [sys.executable, "-m", "build", "--outdir", str(artifacts), str(root)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    for index, artifact in enumerate(sorted(artifacts.iterdir())):
-        environment = tmp_path / f"installed-{index}"
-        venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
-        python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    artifact_directory = os.environ.get("PRINT_COLOR_TEST_ARTIFACT_DIRECTORY")
+    if artifact_directory:
+        artifacts = Path(artifact_directory).resolve(strict=True)
+    else:
+        artifacts = tmp_path / "artifacts"
         subprocess.run(
-            [str(python), "-m", "pip", "install", "--no-deps", "--ignore-installed", str(artifact)],
+            [sys.executable, "-m", "build", "--outdir", str(artifacts), str(root)],
             check=True,
             capture_output=True,
             text=True,
+        )
+    selected = sorted(
+        path for path in artifacts.iterdir() if path.name.endswith((".whl", ".tar.gz"))
+    )
+    assert len(selected) == 2
+    assert sum(path.suffix == ".whl" for path in selected) == 1
+    assert sum(path.name.endswith(".tar.gz") for path in selected) == 1
+    for index, artifact in enumerate(selected):
+        environment = tmp_path / f"installed-{index}"
+        python = Path(sys.executable)
+        installed_env = os.environ.copy()
+        installed_env["PYTHONPATH"] = str(environment)
+        subprocess.run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--target",
+                str(environment),
+                "--no-deps",
+                "--no-build-isolation",
+                "--no-compile",
+                str(artifact),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=installed_env,
         )
         location = subprocess.run(
             [
@@ -75,6 +97,7 @@ def test_installed_release_packages_with_licensed_profile(
             check=True,
             capture_output=True,
             text=True,
+            env=installed_env,
         ).stdout.strip()
         assert Path(location).is_relative_to(environment)
         prefix = [str(python), "-m", "print_color_preflight"]
@@ -84,8 +107,9 @@ def test_installed_release_packages_with_licensed_profile(
             check=True,
             capture_output=True,
             text=True,
+            env=installed_env,
         ).stdout
-        assert "1.1.0" in version
+        assert "2.0.0" in version
         inspection = tmp_path / f"inspection-{index}.json"
         converted = tmp_path / f"converted-{index}.pdf"
         conversion = tmp_path / f"conversion-{index}.json"
@@ -118,6 +142,7 @@ def test_installed_release_packages_with_licensed_profile(
                 check=True,
                 capture_output=True,
                 text=True,
+                env=installed_env,
             )
         data = json.loads(inspection.read_text())
         finding = next(row for row in data["findings"] if row["code"] == "untagged-rgb")
