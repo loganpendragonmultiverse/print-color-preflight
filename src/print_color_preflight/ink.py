@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import subprocess
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from typing import cast
 
@@ -60,14 +61,14 @@ def analyze_ink_coverage(
         pixels_over = 0
         maximum = 0.0
         for image_path in images:
-            with Image.open(image_path) as image:
+            with closing(Image.open(image_path)) as image:
                 pixels_on_page = image.width * image.height
                 if (
                     pixels_on_page > MAX_PAGE_PIXELS
                     or sampled_pixels + pixels_on_page > MAX_TOTAL_PIXELS
                 ):
                     raise ValueError("Rendered raster exceeds the pixel safety budget")
-                with image.convert("CMYK") as cmyk:
+                with closing(image.convert("CMYK")) as cmyk:
                     pixels = cmyk.load()
                     if pixels is None:
                         raise ValueError("Rendered raster has no readable pixels")

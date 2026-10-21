@@ -2,6 +2,9 @@
 
 ## 2.0.0 — 2026-10-21
 
+- Close raster storage explicitly before temporary cleanup and declare the backend tools used by installed-sdist tests.
+- Gate tagged artifacts on full quality checks and package identity, pin maintained actions and emit exact workflow SHA256SUMS.
+
 - Reject malformed PDF metadata with actionable errors before pikepdf page repair; retain input bytes and refuse reports on inspection failure.
 - Reconcile current installation/support instructions and document separately licensed upstream Ghostscript 10.08.0 Linux qualification.
 

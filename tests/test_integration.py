@@ -83,7 +83,7 @@ def test_installed_release_packages_with_licensed_profile(
                 str(artifact),
             ],
             check=True,
-            capture_output=True,
+            capture_output=False,
             text=True,
             env=installed_env,
         )

@@ -85,3 +85,12 @@ Use a current upstream or vendor-maintained patched Ghostscript build. Version
 source build; the historical host 9.54 run establishes functional behavior only.
 The external engine and ICC profiles are not bundled. See [Ghostscript runtime
 qualification](docs/GHOSTSCRIPT.md) for exact scope, provenance and licensing.
+
+## Release artifact closure
+
+The tag workflow pins maintained action commits, checks the stable tag against
+the package version before building, runs the full quality and dependency-audit
+checks, validates wheel/sdist metadata and writes SHA256SUMS over those exact
+two payloads. Normal PR/main native matrix and independent installed-artifact
+review remain required before a public release. It does not publish a GitHub
+release automatically.
