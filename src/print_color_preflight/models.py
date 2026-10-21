@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
 
 
-class RenderingIntent(str, Enum):
+class RenderingIntent(StrEnum):
     PERCEPTUAL = "perceptual"
     RELATIVE = "relative-colorimetric"
     SATURATION = "saturation"
@@ -126,6 +126,8 @@ class ConversionResult:
     command: tuple[str, ...]
     output_sha256: str
     inventory: PdfInventory
+    input_sha256: str = ""
+    source_stability_verified: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -144,6 +146,8 @@ class ConversionResult:
             "ghostscript_version": self.ghostscript_version,
             "command": list(self.command),
             "output_sha256": self.output_sha256,
+            "input_sha256": self.input_sha256,
+            "source_stability_verified": self.source_stability_verified,
             "postflight": self.inventory.to_dict(),
         }
 

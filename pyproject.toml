@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "print-color-preflight"
-version = "1.1.0"
+version = "2.0.0"
 description = "Profile-aware PDF color preflight and RGB-to-CMYK conversion planning."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Logan Pendragon Multiverse" }]
 keywords = ["pdf", "cmyk", "rgb", "icc", "preflight", "printing", "ghostscript"]
@@ -20,13 +20,15 @@ classifiers = [
   "Topic :: Printing",
 ]
 dependencies = [
-  "pikepdf>=9.5,<11",
-  "Pillow>=11,<13",
+  "pikepdf>=10.17,<11",
+  "Pillow>=13,<14",
 ]
 
 [project.optional-dependencies]
 dev = [
   "build>=1.2,<2",
+  "setuptools>=78",
+  "wheel>=0.45,<1",
   "mypy>=1.15,<3",
   "pip-audit>=2.9,<3",
   "pytest>=8.3,<10",
@@ -48,7 +50,7 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S"]
@@ -59,7 +61,7 @@ ignore = ["S603"]
 "examples/**" = ["S101"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 packages = ["print_color_preflight"]
 
@@ -79,5 +81,5 @@ show_missing = true
 
 [tool.setuptools.data-files]
 "share/doc/print-color-preflight" = ["README.md", "CHANGELOG.md", "DEVELOPMENT.md", "TESTING.md"]
-"share/doc/print-color-preflight/docs" = ["docs/ARCHITECTURE.md", "docs/CLI.md", "docs/COLOR-WORKFLOW.md"]
+"share/doc/print-color-preflight/docs" = ["docs/ARCHITECTURE.md", "docs/CLI.md", "docs/COLOR-WORKFLOW.md", "docs/GHOSTSCRIPT.md"]
 "share/doc/print-color-preflight/examples" = ["examples/make_sample_pdf.py"]

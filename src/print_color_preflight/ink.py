@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 import subprocess
 import tempfile
-from io import BytesIO
+from contextlib import closing
 from pathlib import Path
 from typing import cast
 
+import pikepdf
 from PIL import Image
 
 from .ghostscript import GhostscriptError, find_ghostscript
@@ -19,13 +21,14 @@ def analyze_ink_coverage(
     dpi: int = 72,
     executable: Path | None = None,
 ) -> InkCoverageResult:
-    if not 1 <= dpi <= 600:
+    if type(dpi) is not int or not 1 <= dpi <= 600:
         raise ValueError("DPI must be between 1 and 600")
-    if not 0 < tac_limit_percent <= 400:
+    if type(tac_limit_percent) not in {int, float} or not 0 < tac_limit_percent <= 400:
         raise ValueError("TAC limit must be greater than 0 and no more than 400")
     source = pdf_path.expanduser().resolve()
     if not source.is_file():
         raise ValueError(f"PDF does not exist: {source}")
+    _check_raster_budget(source, dpi)
     gs = find_ghostscript(executable)
 
     with tempfile.TemporaryDirectory(prefix="print-color-ink-") as temporary:
@@ -58,18 +61,25 @@ def analyze_ink_coverage(
         pixels_over = 0
         maximum = 0.0
         for image_path in images:
-            with (
-                Image.open(BytesIO(image_path.read_bytes())) as image,
-                image.convert("CMYK") as cmyk,
-            ):
-                pixels = list(cmyk.get_flattened_data())
-                for value in pixels:
-                    pixel = cast(tuple[int, int, int, int], value)
-                    tac = sum(pixel) * 100.0 / 255.0
-                    sampled_pixels += 1
-                    maximum = max(maximum, tac)
-                    if tac > tac_limit_percent:
-                        pixels_over += 1
+            with closing(Image.open(image_path)) as image:
+                pixels_on_page = image.width * image.height
+                if (
+                    pixels_on_page > MAX_PAGE_PIXELS
+                    or sampled_pixels + pixels_on_page > MAX_TOTAL_PIXELS
+                ):
+                    raise ValueError("Rendered raster exceeds the pixel safety budget")
+                with closing(image.convert("CMYK")) as cmyk:
+                    pixels = cmyk.load()
+                    if pixels is None:
+                        raise ValueError("Rendered raster has no readable pixels")
+                    for y in range(cmyk.height):
+                        for x in range(cmyk.width):
+                            pixel = cast(tuple[int, int, int, int], pixels[x, y])
+                            tac = sum(pixel) * 100.0 / 255.0
+                            sampled_pixels += 1
+                            maximum = max(maximum, tac)
+                            if tac > tac_limit_percent:
+                                pixels_over += 1
 
     percent_over = 100.0 * pixels_over / sampled_pixels if sampled_pixels else 0.0
     return InkCoverageResult(
@@ -81,3 +91,33 @@ def analyze_ink_coverage(
         tac_limit_percent=tac_limit_percent,
         dpi=dpi,
     )
+
+
+MAX_PAGE_PIXELS = 40_000_000
+MAX_TOTAL_PIXELS = 200_000_000
+
+
+def _check_raster_budget(path: Path, dpi: int) -> None:
+    total = 0
+    try:
+        with pikepdf.Pdf.open(path) as pdf:
+            for page in pdf.pages:
+                box = [float(value) for value in page.mediabox]
+                unit = float(page.obj.get("/UserUnit", 1))
+                if (
+                    len(box) != 4
+                    or not all(math.isfinite(value) for value in (*box, unit))
+                    or unit <= 0
+                ):
+                    raise ValueError("Invalid page geometry for bounded raster proof")
+                width = math.ceil(abs(box[2] - box[0]) * unit * dpi / 72)
+                height = math.ceil(abs(box[3] - box[1]) * unit * dpi / 72)
+                pixels = width * height
+                total += pixels
+                if pixels < 1 or pixels > MAX_PAGE_PIXELS or total > MAX_TOTAL_PIXELS:
+                    raise ValueError(
+                        "PDF raster proof exceeds the pixel safety budget; "
+                        "lower DPI or split the document"
+                    )
+    except (pikepdf.PdfError, OverflowError) as exc:
+        raise ValueError(f"Cannot validate raster geometry: {exc}") from exc
