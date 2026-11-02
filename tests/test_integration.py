@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -166,8 +167,6 @@ def test_selected_profile_permission_does_not_allow_other_files(tmp_path: Path) 
         executable, tmp_path / "input.pdf", tmp_path / "output.pdf", ConversionOptions(profile)
     )
     permission = next(arg for arg in command if arg.startswith("--permit-file-read="))
-    unrelated = tmp_path / "unselected-private-data.txt"
-    unrelated.write_text("must remain inaccessible")
 
     def read_probe(path: Path, *, grant_profile: bool = True) -> subprocess.CompletedProcess[str]:
         literal = str(path.resolve()).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
@@ -189,11 +188,15 @@ def test_selected_profile_permission_does_not_allow_other_files(tmp_path: Path) 
             timeout=20,
         )
 
-    # A document is untrusted; -c executes trusted initialization code instead.
-    baseline_denied = read_probe(unrelated, grant_profile=False)
-    assert baseline_denied.returncode != 0
-    assert "invalidfileaccess" in baseline_denied.stdout + baseline_denied.stderr
-    assert read_probe(profile).returncode == 0
-    denied = read_probe(unrelated)
-    assert denied.returncode != 0
-    assert "invalidfileaccess" in denied.stdout + denied.stderr
+    # Ghostscript may already permit its temporary directory. Probe an unrelated
+    # location and establish the denial baseline before adding profile permission.
+    with tempfile.TemporaryDirectory(prefix="print-color-unselected-", dir=Path.home()) as private:
+        unrelated = Path(private) / "unselected-private-data.txt"
+        unrelated.write_text("must remain inaccessible")
+        baseline_denied = read_probe(unrelated, grant_profile=False)
+        assert baseline_denied.returncode != 0
+        assert "invalidfileaccess" in baseline_denied.stdout + baseline_denied.stderr
+        assert read_probe(profile).returncode == 0
+        denied = read_probe(unrelated)
+        assert denied.returncode != 0
+        assert "invalidfileaccess" in denied.stdout + denied.stderr
