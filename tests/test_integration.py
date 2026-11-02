@@ -4,11 +4,16 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
-from print_color_preflight.ghostscript import convert_pdf, find_ghostscript
+from print_color_preflight.ghostscript import (
+    build_conversion_command,
+    convert_pdf,
+    find_ghostscript,
+)
 from print_color_preflight.ink import analyze_ink_coverage
 from print_color_preflight.models import ConversionOptions
 
@@ -149,3 +154,49 @@ def test_installed_release_packages_with_licensed_profile(
         assert finding["details"]["references"][0]["page"] == 1
         assert json.loads(conversion.read_text())["postflight"]["output_intents"]
         assert json.loads(ink.read_text())["page_count"] == 1
+
+
+@pytest.mark.integration
+def test_selected_profile_permission_does_not_allow_other_files(tmp_path: Path) -> None:
+    profile_value = os.environ.get("PRINT_COLOR_TEST_CMYK_PROFILE")
+    if not profile_value:
+        pytest.skip("PRINT_COLOR_TEST_CMYK_PROFILE is not configured")
+    executable = find_ghostscript()
+    profile = Path(profile_value)
+    command = build_conversion_command(
+        executable, tmp_path / "input.pdf", tmp_path / "output.pdf", ConversionOptions(profile)
+    )
+    permission = next(arg for arg in command if arg.startswith("--permit-file-read="))
+
+    def read_probe(path: Path, *, grant_profile: bool = True) -> subprocess.CompletedProcess[str]:
+        literal = str(path.resolve()).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        program = tmp_path / "untrusted-file-read-probe.ps"
+        program.write_text(f"({literal}) (r) file closefile")
+        return subprocess.run(
+            [
+                str(executable),
+                *([permission] if grant_profile else []),
+                "-dSAFER",
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-dNODISPLAY",
+                str(program),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+
+    # Ghostscript may already permit its temporary directory. Probe an unrelated
+    # location and establish the denial baseline before adding profile permission.
+    with tempfile.TemporaryDirectory(prefix="print-color-unselected-", dir=Path.home()) as private:
+        unrelated = Path(private) / "unselected-private-data.txt"
+        unrelated.write_text("must remain inaccessible")
+        baseline_denied = read_probe(unrelated, grant_profile=False)
+        assert baseline_denied.returncode != 0
+        assert "invalidfileaccess" in baseline_denied.stdout + baseline_denied.stderr
+        assert read_probe(profile).returncode == 0
+        denied = read_probe(unrelated)
+        assert denied.returncode != 0
+        assert "invalidfileaccess" in denied.stdout + denied.stderr

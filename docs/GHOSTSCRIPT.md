@@ -7,3 +7,15 @@ For version 2.0.0, native Linux acceptance additionally builds unmodified upstre
 Upstream's [release page](https://ghostscript.com/releases/index.html) lists 10.08.0, released September 8, 2026. Its [CVE fix table](https://ghostscript.com/releases/cve/index.html) lists fixes in that release and intervening releases after 9.54.0. A passing synthetic conversion is not a claim that a runtime has no vulnerabilities. Review current upstream/vendor notices before processing documents.
 
 Ghostscript is separately available under AGPLv3 or a commercial license from Artifex; see [official licensing](https://ghostscript.com/licensing/). It and its profiles retain their own licenses. This MIT Python package does not bundle Ghostscript or an ICC profile. Private qualification retains the upstream source and license and uses its default CMYK profile solely for the test. Choose a profile licensed and appropriate for your printer; native fixture success does not certify press accuracy or PDF/X conformance. No commercial license purchase, host package upgrade, or security-setting change is performed by this project.
+
+
+## Selected-profile read permission
+
+Ghostscript conversion retains `-dSAFER` and explicitly permits reading only the
+resolved, validated ICC destination profile. No directory, write, control or all-file
+permission is granted. Profile paths containing `*` or the platform path-list
+separator are rejected because Ghostscript interprets them as permission patterns
+or multiple paths; use a plain filename instead. Spaces remain supported.
+A native integration probe verifies that the selected profile can be opened while
+an unrelated file remains blocked. The conversion error includes both output
+streams so Ghostscript's underlying diagnostic is retained.
