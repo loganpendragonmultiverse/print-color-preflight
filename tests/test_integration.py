@@ -169,18 +169,19 @@ def test_selected_profile_permission_does_not_allow_other_files(tmp_path: Path) 
     unrelated = tmp_path / "unselected-private-data.txt"
     unrelated.write_text("must remain inaccessible")
 
-    def read_probe(path: Path) -> subprocess.CompletedProcess[str]:
+    def read_probe(path: Path, *, grant_profile: bool = True) -> subprocess.CompletedProcess[str]:
         literal = str(path.resolve()).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        program = tmp_path / "untrusted-file-read-probe.ps"
+        program.write_text(f"({literal}) (r) file closefile")
         return subprocess.run(
             [
                 str(executable),
-                permission,
+                *([permission] if grant_profile else []),
                 "-dSAFER",
                 "-dBATCH",
                 "-dNOPAUSE",
                 "-dNODISPLAY",
-                "-c",
-                f"({literal}) (r) file closefile",
+                str(program),
             ],
             capture_output=True,
             text=True,
@@ -188,6 +189,10 @@ def test_selected_profile_permission_does_not_allow_other_files(tmp_path: Path) 
             timeout=20,
         )
 
+    # A document is untrusted; -c executes trusted initialization code instead.
+    baseline_denied = read_probe(unrelated, grant_profile=False)
+    assert baseline_denied.returncode != 0
+    assert "invalidfileaccess" in baseline_denied.stdout + baseline_denied.stderr
     assert read_probe(profile).returncode == 0
     denied = read_probe(unrelated)
     assert denied.returncode != 0
