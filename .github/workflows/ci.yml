@@ -92,7 +92,13 @@ jobs:
               page=pdf.add_blank_page(page_size=(100,100))
               page.Contents=pdf.make_stream(b'1 0 0 rg 10 10 80 80 re f')
               pdf.save(source)
-              command=build_conversion_command(find_ghostscript(),source,folder/'out.pdf',ConversionOptions(profile))
-              result=subprocess.run(command,capture_output=True,text=True)
-              print(json.dumps({'command':command,'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr},indent=2),flush=True)
-              assert result.returncode == 0
+              original=build_conversion_command(find_ghostscript(),source,folder/'out.pdf',ConversionOptions(profile))
+              cases={'original':list(original)}
+              for token in ['-dBlackPtComp=1','-dDeviceGrayToK=true','-dPreserveBlack=true','-sProcessColorModel=DeviceCMYK']:
+                  cases['omit-'+token]=[x for x in original if x != token]
+              cases['boolean-BlackPtComp']=[x.replace('-dBlackPtComp=1','-dBlackPtComp=true') for x in original]
+              cases['exact-profile-read-allowlist']=[original[0],'--permit-file-read='+str(profile.resolve()),*original[1:]]
+              for label,command in cases.items():
+                  assert '-dSAFER' in command and not any('NOSAFER' in x for x in command)
+                  result=subprocess.run(command,capture_output=True,text=True)
+                  print(json.dumps({'case':label,'command':command,'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr},indent=2),flush=True)
