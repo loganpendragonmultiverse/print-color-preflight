@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -24,6 +25,9 @@ def test_builds_explicit_safe_conversion_command(cmyk_profile: Path, tmp_path: P
         Path("C:/tools/gs.exe"), Path("input.pdf"), tmp_path / "output.pdf", options
     )
     assert "-dSAFER" in command
+    assert [arg for arg in command if arg.startswith("--permit-file-")] == [
+        f"--permit-file-read={cmyk_profile.resolve()}"
+    ]
     assert "-sColorConversionStrategy=CMYK" in command
     assert "-dRenderIntent=1" in command
     assert "-dBlackPtComp=0" in command
@@ -114,17 +118,37 @@ def test_failed_conversion_does_not_create_output(
     responses = iter(
         [
             CompletedProcess([], 0, "GPL Ghostscript test\n", ""),
-            CompletedProcess([], 1, "", "conversion error"),
+            CompletedProcess([], 1, "profile access root cause", "conversion error"),
         ]
     )
     monkeypatch.setattr(
         "print_color_preflight.ghostscript.subprocess.run", lambda *args, **kwargs: next(responses)
     )
-    with pytest.raises(GhostscriptError, match="conversion error"):
+    with pytest.raises(GhostscriptError, match="conversion error") as captured:
         convert_pdf(
             rgb_pdf,
             output,
             ConversionOptions(cmyk_profile),
             executable=executable,
         )
+    assert "profile access root cause" in str(captured.value)
     assert not output.exists()
+
+
+@pytest.mark.parametrize("special", [os.pathsep, "*"])
+def test_rejects_profile_permission_expansion(tmp_path: Path, special: str) -> None:
+    profile = tmp_path / f"profile{special}other.icc"
+    with pytest.raises(GhostscriptError, match="permission-list syntax"):
+        build_conversion_command(
+            Path("gs"), Path("input.pdf"), tmp_path / "output.pdf", ConversionOptions(profile)
+        )
+
+
+def test_literal_profile_path_preserves_spaces(tmp_path: Path) -> None:
+    profile = tmp_path / "selected CMYK profile.icc"
+    command = build_conversion_command(
+        Path("gs"), Path("input.pdf"), tmp_path / "output.pdf", ConversionOptions(profile)
+    )
+    assert f"--permit-file-read={profile.resolve()}" in command
+    assert f"-sOutputICCProfile={profile.resolve()}" in command
+    assert "-dSAFER" in command

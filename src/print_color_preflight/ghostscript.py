@@ -57,8 +57,16 @@ def build_conversion_command(
     output_path: Path,
     options: ConversionOptions,
 ) -> tuple[str, ...]:
+    profile_path = str(options.destination_profile.resolve())
+    # Ghostscript treats these as a path list or wildcard, not a literal filename.
+    if os.pathsep in profile_path or "*" in profile_path:
+        raise GhostscriptError(
+            "ICC profile path contains Ghostscript permission-list syntax; "
+            "use a path without the platform path-list separator or '*'"
+        )
     args = [
         str(executable),
+        f"--permit-file-read={profile_path}",
         "-dSAFER",
         "-dBATCH",
         "-dNOPAUSE",
@@ -68,7 +76,7 @@ def build_conversion_command(
         f"-dCompatibilityLevel={options.compatibility_level}",
         "-sColorConversionStrategy=CMYK",
         "-sProcessColorModel=DeviceCMYK",
-        f"-sOutputICCProfile={options.destination_profile.resolve()}",
+        f"-sOutputICCProfile={profile_path}",
         f"-dRenderIntent={options.intent.ghostscript_value}",
         f"-dBlackPtComp={1 if options.black_point_compensation else 0}",
         "-dDeviceGrayToK=true",
@@ -122,7 +130,9 @@ def convert_pdf(
             timeout=600,
         )
         if completed.returncode != 0 or not temporary_output.is_file():
-            detail = (completed.stderr or completed.stdout).strip()
+            detail = "\n".join(
+                stream.strip() for stream in (completed.stderr, completed.stdout) if stream.strip()
+            )
             raise GhostscriptError(f"Ghostscript conversion failed: {detail}")
         signature(temporary_output)
         if signature(source) != source_signature or signature(profile.path) != profile_signature:

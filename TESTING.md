@@ -94,3 +94,15 @@ checks, validates wheel/sdist metadata and writes SHA256SUMS over those exact
 two payloads. Normal PR/main native matrix and independent installed-artifact
 review remain required before a public release. It does not publish a GitHub
 release automatically.
+
+
+## Selected-profile read permission
+
+Ghostscript conversion retains `-dSAFER` and explicitly permits reading only the
+resolved, validated ICC destination profile. No directory, write, control or all-file
+permission is granted. Profile paths containing `*` or the platform path-list
+separator are rejected because Ghostscript interprets them as permission patterns
+or multiple paths; use a plain filename instead. Spaces remain supported.
+A native integration probe verifies that the selected profile can be opened while
+an unrelated file remains blocked. The conversion error includes both output
+streams so Ghostscript's underlying diagnostic is retained.
