@@ -1,0 +1,35 @@
+name: Nonpublishing Ghostscript diagnostic
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v7.1.0
+        with: { python-version: '3.12' }
+      - run: |
+          python -m pip install -e '.[dev]'
+          sudo apt-get update
+          sudo apt-get install --yes ghostscript
+      - name: Reproduce conversion and retain complete diagnostics
+        shell: python
+        run: |
+          import pathlib, tempfile, subprocess, json
+          import pikepdf
+          from print_color_preflight.models import ConversionOptions
+          from print_color_preflight.ghostscript import build_conversion_command, find_ghostscript
+          profile=next(pathlib.Path('/usr/share').rglob('default_cmyk.icc'))
+          with tempfile.TemporaryDirectory() as temp:
+              folder=pathlib.Path(temp)
+              source=folder/'rgb.pdf'
+              pdf=pikepdf.Pdf.new()
+              page=pdf.add_blank_page(page_size=(100,100))
+              page.Contents=pdf.make_stream(b'1 0 0 rg 10 10 80 80 re f')
+              pdf.save(source)
+              command=build_conversion_command(find_ghostscript(),source,folder/'out.pdf',ConversionOptions(profile))
+              result=subprocess.run(command,capture_output=True,text=True)
+              print(json.dumps({'command':command,'exit':result.returncode,'stdout':result.stdout,'stderr':result.stderr},indent=2),flush=True)
+              assert result.returncode == 0
